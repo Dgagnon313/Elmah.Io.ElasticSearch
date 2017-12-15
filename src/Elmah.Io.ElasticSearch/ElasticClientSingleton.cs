@@ -2,6 +2,8 @@
 using System.Collections;
 using System.Configuration;
 using System.Linq;
+using System.Runtime.Caching;
+using System.Runtime.Remoting.Messaging;
 using Elasticsearch.Net;
 //using Elasticsearch.Net.ConnectionPool;
 using Nest;
@@ -17,13 +19,14 @@ namespace Elmah.Io.ElasticSearch
     {
         private const string MultiFieldSuffix = "raw";
 
-        private static ElasticClientSingleton _instance;
+        private static ElasticClientSingleton Instance;
+        private static readonly ObjectCache Cache = MemoryCache.Default;
         public IElasticClient Client;
         private IElasticConnectionConfiguration _connectionConfiguration = new ElasticConnectionConfiguration();
 
         public void Dispose()
         {
-            _instance = null;
+            Instance = null;
             Client = null;
             _connectionConfiguration = null;
         }
@@ -41,7 +44,23 @@ namespace Elmah.Io.ElasticSearch
 
         public static ElasticClientSingleton GetInstance(IDictionary config)
         {
-            return _instance ?? (_instance = new ElasticClientSingleton(config));
+            return CheckCache(config);
+        }
+
+        public static ElasticClientSingleton CheckCache(IDictionary config)
+        {
+            var cachedInstance = Cache.GetCacheItem("instance");
+
+            if (cachedInstance == null)
+            {
+                cachedInstance = new CacheItem("instance", new ElasticClientSingleton(config));
+
+                Cache.Add(
+                    cachedInstance,
+                    new CacheItemPolicy { AbsoluteExpiration = DateTimeOffset.UtcNow.AddDays(1) });
+            }
+
+            return (ElasticClientSingleton)cachedInstance.Value;
         }
 
         /// <summary>
